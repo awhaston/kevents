@@ -1,0 +1,9 @@
+CompileFlags:
+  Add:
+    - -I/lib/modules/6.17.12-300.fc43.aarch64/build/include
+    - -I/lib/modules/6.17.12-300.fc43.aarch64/build/arch/x86/include
+    - -I/lib/modules/6.17.12-300.fc43.aarch64/build/arch/x86/include/generated
+    - -I/lib/modules/6.17.12-300.fc43.aarch64/build/include/generated
+    - -D__KERNEL__
+    - -DMODULE
+
