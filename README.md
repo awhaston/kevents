@@ -5,5 +5,5 @@ This simple ioctl module is for sending messages between processes using the ker
 Contains the kernel module plus a test app to send data
 
 ## TODO:
-[] Poll for data  
-[] Thread safety
+[ ] Poll for data  
+[ ] Thread safety
