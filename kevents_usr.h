@@ -4,20 +4,18 @@
 #include <asm/types.h>
 
 #define MSG_MAX 1440
-struct kevents_resp {
-    __u64 len;
-    char msg[MSG_MAX];
-};
 
 struct kevents_req_send {
     __u32 id;
+    __u64 msg;
     __u64 len;
-    char message[MSG_MAX];
 };
 
 struct kevents_req_get {
     __u32 id;
-    struct kevents_resp *resp;
+    __u64 msg;
+    __u64 len;
+    __u64 out_len;
 };
 
 #define MAGIC           'M'

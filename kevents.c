@@ -1,6 +1,7 @@
 #include <asm-generic/errno-base.h>
 #include <asm-generic/errno.h>
 #include <linux/string.h>
+#include <linux/uaccess.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -41,7 +42,7 @@ struct ke_event *create_event(u32 id, char *msg, u64 len)
     e->next = NULL;
     e->prev = NULL;
     e->id = id;
-    memcpy(e->msg, msg, len);
+    e->msg = msg;
     e->len = len;
     
     return e;
@@ -68,7 +69,27 @@ int push_event_to_broker(struct ke_broker *b, u32 id, char *msg, u64 len)
     return 0;
 }
 
-int pop_event_to_broker(struct ke_broker *b, struct ke_event *e, u32 id)
+int push_event_to_front(struct ke_broker *b, struct ke_event *event)
+{
+    if (!b || !event)
+        return -EINVAL;
+
+    if (!b->head) {
+        b->head = event;
+        b->tail = event;
+        event->next = NULL;
+        event->prev = NULL;
+        return 0;
+    }
+
+    event->next = b->head;
+    event->prev = NULL;
+    b->head->prev = event;
+    b->head = event;
+    return 0;
+}
+
+struct ke_event *pop_event_to_broker(struct ke_broker *b, u32 id)
 {
     struct ke_event *c_event = b->head;
 
@@ -81,37 +102,27 @@ int pop_event_to_broker(struct ke_broker *b, struct ke_event *e, u32 id)
     }
 
     if (c_event == NULL)
-        return -2;
+        return NULL;
 
-    e->id = c_event->id;
-    e->len = c_event->len;
-    memcpy(e->msg, c_event->msg, e->len);
-    
+    if (c_event->prev)
+        c_event->prev->next = c_event->next;
+    else
+        b->head = c_event->next;
 
-    struct ke_event *next = c_event->next;
-    struct ke_event *prev = c_event->prev;
+    if (c_event->next)
+        c_event->next->prev = c_event->prev;
+    else
+        b->tail = c_event->prev;       
 
-    if (c_event == b->head)
-        b->head = NULL;
+    return c_event;
+}
 
-    // If we don't have a prev it should null the tail
-    if (c_event == b->tail)
-        b->tail = prev;
-
-    // Link the next and prev together
-    if (next != NULL) {
-        next->prev = prev;
-    }
-
-    if (prev != NULL) {
-        prev->next = next;
-    }
-
-    // No memory leaks here or double frees
-    if(c_event)
-        kfree(c_event);
-
-    return 0;
+void free_event(struct ke_event *event)
+{
+   if (event->msg) 
+       kfree(event->msg);
+   if (event)
+       kfree(event);
 }
 
 static long int kevents_ioctl(struct file *file,
@@ -136,45 +147,75 @@ static long int kevents_ioctl(struct file *file,
             return -EFAULT;
         }
 
-        pr_info("Struct given %d, %llu, %s", req.id, req.len, req.message);
+        pr_info("Struct given %d, %llu, %llu", req.id, req.len, req.msg);
 
-        for (int i = 0; i < req.len; ++i) {
-            printk("%c\n", req.message[i]);
+        if (req.len > MSG_MAX) {
+            return -EFAULT;
         }
 
-        mutex_lock(&broker->lock);
-        err = push_event_to_broker(broker, req.id, req.message, req.len);
-        mutex_unlock(&broker->lock);
+        char *msg = memdup_array_user((const void *)req.msg, req.len, sizeof(char));
+
+        if (IS_ERR(msg)) {
+            return -EFAULT;
+        }
+
+        for (int i = 0; i < req.len; ++i) {
+            printk("%c\n", msg[i]);
+        }
+
+        err = push_event_to_broker(broker, req.id, msg, req.len);
         if (err != 0) {
             LOG_ERR("unable to push event to queue\n");
             return -ENOTTY;
         }
+
+        LOG_INFO("Successfully send message\n");
 
         break;
     }
     case KEVENTS_GET: {
         LOG_INFO("Get request\n");
         struct kevents_req_get req = { 0 };
-        struct ke_event event = { 0 };
+        struct ke_event *event = NULL;
         int err = copy_from_user(&req, (void *)arg, sizeof(req));
+
+        
+       pr_info("Got message from user %d, %llu, %llu\n", req.id, req.msg, req.len);
 
         if (err){
             pr_alert("error from copying %d", err);
             return -EFAULT;
         }
 
-        mutex_lock(&broker->lock);
-        err = pop_event_to_broker(broker, &event, req.id);
-        mutex_unlock(&broker->lock);
-        if (err != 0) {
+        if (req.len > MSG_MAX) {
+            pr_alert("kevents: error, message too long");
+            return -EFAULT;
+        }
+
+        event = pop_event_to_broker(broker, req.id);
+        if (event == NULL) {
             pr_alert("unable to pop event to queue %d\n", err);
             return -ENOTTY;
         }
 
-        req.resp->len = event.len;
-        if (copy_to_user(req.resp->msg, event.msg, event.len)) {
+        if (event->len > req.len) {
+            pr_alert("message len too short\n");
+            push_event_to_front(broker, event);
+            return -EFAULT;
+        }
+
+        req.out_len = event->len;
+        if (copy_to_user((void *)req.msg, event->msg, event->len)) {
+            free_event(event);
             return -ENOTTY;
         }
+
+        if (copy_to_user((void *)arg, &req, sizeof(req))) {
+            free_event(event);
+            return -EFAULT;
+        }
+
+        free_event(event);
 
         break;
     }

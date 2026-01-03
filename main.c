@@ -16,24 +16,36 @@ int main(void)
     }
 
     char message[] = "Hello!";
+    char message2[] = "Hello from message 2!";
+    char out_msg[sizeof(message2)];
 
     struct kevents_req_send req =  {
         .id = 1,
         .len = sizeof(message),
-        .message = "Hello!"
+        .msg = (uint64_t)&message
+    };
+    struct kevents_req_send req2 =  {
+        .id = 2,
+        .len = sizeof(message2),
+        .msg = (uint64_t)&message2
     };
 
-    struct kevents_resp resp = { 0 };
     struct kevents_req_get get_req= {
-       .id = 1,
-       .resp = &resp
+        .id = 2,
+        .len = sizeof(out_msg),
+        .out_len = 0,
+        .msg = (uint64_t)&out_msg
     };
 
     ioctl(dev, KEVENTS_SEND, &req);
+    ioctl(dev, KEVENTS_SEND, &req2);
 
     ioctl(dev, KEVENTS_GET, &get_req);
+    printf("%s\n", (char *)get_req.msg);
+    get_req.id = 1;
+    ioctl(dev, KEVENTS_GET, &get_req);
+    printf("%s\n", (char *)get_req.msg);
 
-    printf("%s", resp.msg);
 
     
     return 0;

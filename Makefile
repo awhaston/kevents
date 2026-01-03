@@ -7,6 +7,9 @@ BUILD_DIR=$(HOME)/$(PROJECT_DIR)/build
 
 export KROOT=/lib/modules/$(shell uname -r)/build
 
+test_app: ./main.c
+	gcc -g -o main ./main.c
+
 compile: clean
 	@$(MAKE) -C $(KROOT) M=$(PWD) modules
 
