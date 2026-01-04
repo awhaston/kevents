@@ -117,12 +117,35 @@ struct ke_event *pop_event_to_broker(struct ke_broker *b, u32 id)
     return c_event;
 }
 
+int poll_event_broker(struct ke_broker *b, u32 id)
+{
+    struct ke_event *e = b->head;
+    while (e != NULL) {
+        if (e->id == id) {
+            return 1;
+        }
+        e = e->next;
+    }
+    return 0; 
+}
+
 void free_event(struct ke_event *event)
 {
    if (event->msg) 
        kfree(event->msg);
    if (event)
        kfree(event);
+}
+
+void free_events(struct ke_broker *b)
+{
+    struct ke_event *e = b->head;
+    struct ke_event *n = NULL;
+    while (e != NULL) {
+        n = e->next;
+        free_event(e);
+        e = n;
+    }
 }
 
 static long int kevents_ioctl(struct file *file,
@@ -134,9 +157,22 @@ static long int kevents_ioctl(struct file *file,
     LOG_INFO("Message from ioctl");
     
     switch (cmd) {
-    case KEVENTS:
-        LOG_INFO("Cmd 1\n");
-        break;
+    case KEVENTS_POLL: {
+        LOG_INFO("Poll request\n");
+        struct kevents_req_poll req = { 0 };
+
+        if (copy_from_user(&req, (void *) arg, sizeof(req))) {
+            LOG_ERR("unable to copy user struct\n");
+            return -EFAULT;
+        }
+        
+        mutex_lock(&broker->lock);
+        pr_info("kevents: got req id %d\n", req.id);
+        int ret = poll_event_broker(broker, req.id);
+        mutex_unlock(&broker->lock);
+
+        return ret;
+    } break;
     case KEVENTS_SEND: {
         LOG_INFO("Send request\n");
         struct kevents_req_send req = { 0 };
@@ -147,67 +183,65 @@ static long int kevents_ioctl(struct file *file,
             return -EFAULT;
         }
 
-        pr_info("Struct given %d, %llu, %llu", req.id, req.len, req.msg);
-
         if (req.len > MSG_MAX) {
-            return -EFAULT;
+            return -EINVAL;
         }
 
         char *msg = memdup_array_user((const void *)req.msg, req.len, sizeof(char));
 
         if (IS_ERR(msg)) {
+            return -ENOMEM;
+        }
+
+        mutex_lock(&broker->lock);
+        pr_info("kevents: got req id %d\n", req.id);
+        err = push_event_to_broker(broker, req.id, msg, req.len);
+        mutex_unlock(&broker->lock);
+        if (err != 0) {
+            LOG_ERR("unable to push event to queue\n");
             return -EFAULT;
         }
 
-        for (int i = 0; i < req.len; ++i) {
-            printk("%c\n", msg[i]);
-        }
-
-        err = push_event_to_broker(broker, req.id, msg, req.len);
-        if (err != 0) {
-            LOG_ERR("unable to push event to queue\n");
-            return -ENOTTY;
-        }
-
         LOG_INFO("Successfully send message\n");
-
-        break;
-    }
+    } break;
     case KEVENTS_GET: {
         LOG_INFO("Get request\n");
         struct kevents_req_get req = { 0 };
         struct ke_event *event = NULL;
         int err = copy_from_user(&req, (void *)arg, sizeof(req));
 
-        
-       pr_info("Got message from user %d, %llu, %llu\n", req.id, req.msg, req.len);
-
         if (err){
-            pr_alert("error from copying %d", err);
+            pr_alert("kevents: error from copying %d", err);
             return -EFAULT;
         }
 
         if (req.len > MSG_MAX) {
-            pr_alert("kevents: error, message too long");
-            return -EFAULT;
+            LOG_ERR("error message too big");
+            return -EINVAL;
         }
 
+        pr_info("kevents: got req id %d\n", req.id);
+
+        mutex_lock(&broker->lock);
         event = pop_event_to_broker(broker, req.id);
         if (event == NULL) {
-            pr_alert("unable to pop event to queue %d\n", err);
-            return -ENOTTY;
+            mutex_unlock(&broker->lock);
+            return 0;
         }
 
         if (event->len > req.len) {
-            pr_alert("message len too short\n");
+            LOG_ERR("message len too short\n");
             push_event_to_front(broker, event);
-            return -EFAULT;
+            mutex_unlock(&broker->lock);
+            return -EINVAL;
         }
+
+        mutex_unlock(&broker->lock); // We do not need the mutex from here
 
         req.out_len = event->len;
         if (copy_to_user((void *)req.msg, event->msg, event->len)) {
             free_event(event);
-            return -ENOTTY;
+            return -EFAULT;
         }
 
         if (copy_to_user((void *)arg, &req, sizeof(req))) {
@@ -217,8 +251,16 @@ static long int kevents_ioctl(struct file *file,
 
         free_event(event);
 
-        break;
-    }
+    } break;
+#if DEBUG
+    case KEVENTS_DEBUG: {
+        struct ke_event *e = broker->head;
+        while (e != NULL) {
+            pr_info("Message with id %d and message %s\n", e->id, e->msg);
+            e = e->next;
+        }
+    } break;
+#endif
     default:
         return -ENOTTY;
     }
@@ -241,7 +283,7 @@ static int __init kevents_init(void)
     broker = kmalloc(sizeof(struct ke_broker), GFP_KERNEL);
     if (IS_ERR(broker)) {
         LOG_ERR("unable to allocate memory for broker\n");
-        return -EFAULT;
+        return -ENOMEM;
     }
 
     init_broker(broker);
@@ -284,6 +326,7 @@ static int __init kevents_init(void)
 static void __exit kevents_exit(void)
 {
     LOG_INFO("removing kevents driver\n");
+    free_events(broker);
     if (broker)
         kfree(broker);
 
