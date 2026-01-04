@@ -17,6 +17,25 @@ Events are:
 - Held in kernel memory until consumed
 The kernel enforces mutual exclusion so only one process manipulates the event broker at a time.
 
+## Compiling
+
+Currently the module supports Linux version 6.0.0
+Kernel module can be compiled and installed with Make using:
+```
+make compile
+make insert
+```
+The library can be compiled with
+```
+make compile_lib
+# OR
+make compile_static
+```
+Test apps can be compiled with
+```
+make test_apps
+```
+
 ## Library
 A small C library wraps the ioctl interface and exposes a simple API.
 Typical usage:
