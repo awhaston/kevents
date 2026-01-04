@@ -81,6 +81,17 @@ Messages are copied into kernel memory when sent and copied back out when retrie
 There is no persistence. Events exist only in RAM.
 The API is intentionally minimal and synchronous.
 
+## Rationale
+
+Linux provides mature and efficient IPC mechanisms such as pipes, sockets, and netlink. This module does not attempt to replace them.
+
+KEvents exists as a focused exercise in:
+- Designing a stable user–kernel ABI
+- Managing kernel memory lifetimes
+- Implementing safe synchronization
+- Reasoning about blocking and retrieval semantics
+- Handling failure cases without crashing the kernel
+
 ## Limitations
 This project is not designed for:
 - High throughput
@@ -88,3 +99,5 @@ This project is not designed for:
 - Untrusted input
 - Security-sensitive environments
 There is no authentication, rate limiting, or isolation between clients. Any process that can open the device can send and receive events.
+
+This is not meant for production systems
