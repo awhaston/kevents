@@ -18,5 +18,6 @@ int ke_init(kevents_ctx *ctx);
 int ke_poll_event(kevents_ctx *ctx, int id);
 int ke_send_event(kevents_ctx *ctx, int id, char *msg, int len);
 int ke_get_event(kevents_ctx *ctx, int id, char *msg, int len);
+int ke_close(kevents_ctx *ctx);
 
 #endif

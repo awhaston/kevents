@@ -6,7 +6,6 @@
 
 #include <sys/ioctl.h>
 #include "kevents_lib.h"
-#include "kevents_usr.h"
 
 #define MY_ID    1
 #define OTHER_ID 2
@@ -28,25 +27,12 @@ int main(void)
     char *msg = "Hello world\n";
     char buff[1040] = { 0 };
 
-    // for (int i = 0; i < 100; ++i) {
-    //     snprintf(buff, strlen(msg), "%s %d\n", msg, i);
-    //
-    //     err = ke_send_event(&ctx, OTHER_ID, buff, sizeof(buff));
-    //
-    //     if (err)
-    //         return 1;
-    // }
-    //
-    // ioctl(ctx.file, KEVENTS_DEBUG, NULL);
-
     snprintf(buff, sizeof(buff), "%s\n", msg);
 
     err = ke_send_event(&ctx, OTHER_ID, buff, sizeof(buff));
 
     if (err)
         return 1;
-
-
 
     while (1) {
         if (ke_poll_event(&ctx, MY_ID)) {
@@ -69,6 +55,7 @@ int main(void)
     }
 
 
+    ke_close(&ctx);
     
     return 0;
 }

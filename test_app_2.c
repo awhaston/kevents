@@ -57,5 +57,7 @@ int main(void)
         sleep(1);
     }
     
+    ke_close(&ctx);
+
     return 0;
 }

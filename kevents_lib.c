@@ -1,10 +1,14 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #include "kevents_lib.h"
 #include "kevents_usr.h"
 
+/*
+    Initialize the context and open the device file
+*/
 int ke_init(kevents_ctx *ctx)
 {
     if (!ctx)
@@ -18,6 +22,9 @@ int ke_init(kevents_ctx *ctx)
     return 0;
 }
 
+/*
+  Poll that device driver has an event for the id
+*/
 int ke_poll_event(kevents_ctx *ctx, int id)
 {
     if (!ctx)
@@ -30,6 +37,10 @@ int ke_poll_event(kevents_ctx *ctx, int id)
     return ioctl(ctx->file, KEVENTS_POLL, &req);
 }
 
+
+/*
+    Send event with a specific ID and the message with the len; 
+*/
 int ke_send_event(kevents_ctx *ctx, int id, char *msg, int len)
 {
     if (!ctx)
@@ -64,4 +75,9 @@ int ke_get_event(kevents_ctx *ctx, int id, char *msg, int len)
     };
 
     return ioctl(ctx->file, KEVENTS_GET, &req);
+}
+
+int ke_close(kevents_ctx *ctx)
+{
+    return close(ctx->file);
 }
